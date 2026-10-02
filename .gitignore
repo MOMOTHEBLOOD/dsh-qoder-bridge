@@ -4,3 +4,4 @@ node_modules/
 config.local.json
 .deps/
 .pipcache/
+tools/__pycache__/
