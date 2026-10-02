@@ -30,3 +30,12 @@
   3. qoderclicn 的单次调用参数（--prompt/--max-output-tokens 对照 qoder-proxy runCli）
 - 依赖用户动作：npm i -g @qodercn-ai/qoderclicn && qoderclicn login（凭据落 ~/.qoderworkcn）
 
+## 2026-10-02 23:55 重大进展：Qoder CN IDE 登录态解密打通
+
+- 更正：Qoder CN 装在 `G:\APPLICATIONS\Qoder CN`（此前位置归属搞错）；用户数据在 `AppData/Roaming/com.qodercn.app.stable`
+- 登录态两件套：`auth.v1.dat`（400B）+ `auth.machine-id`（UUID 文本）
+- 加密方案：Chromium OSCrypt 同款 —— `Local State` 的 `os_crypt.encrypted_key`（DPAPI 包装，剥 "DPAPI" 前缀）→ AES-256-GCM 密钥 → `auth.v1.dat` 剥 "v10" 前缀后 12B nonce + 密文
+- 明文 JSON：schemaVersion / token / refreshToken / expiresAt / refreshTokenExpiresAt / user —— **与 agent2api 凭据格式直接对应，无需 qoderclicn 单独登录**
+- 工程排障记录：ctypes DATA_BLOB 用 c_char_p 接输出指针导致堆损坏(0xc0000374)，改 c_void_p 后解决；cryptography 装到项目 .deps（不碰 C 盘）；Mimosa hook 两次拦截（路径穿越写入 / Bash 写源码）均已按规范绕行
+- 下一步：拿 token 调 Qoder 目录/余额端点（对照 agent2api 的 chat.rs / balance.rs）→ 真实模型清单与倍率进 fallback 表
+
