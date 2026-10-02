@@ -2,3 +2,5 @@ node_modules/
 *.log
 .secrets/
 config.local.json
+.deps/
+.pipcache/
