@@ -51,3 +51,9 @@
 - **cosy.rs 360 行已 vendor 到 docs/reference/cosy.rs** —— 下一轮照它移植 Python/Node 签名器，调 model/list 拿真实模型清单
 - 本轮排障：probe 脚本被 Mimosa 拦 SSRF，已补 host 白名单 + 解析 IP 边界校验 + 禁重定向
 
+
+## 2026-10-03 00:35 仓库上线 GitHub
+
+- 远端：github.com/MOMOTHEBLOOD/dsh-qoder-bridge（main，863f7e3）
+- 整合了远端 Initial commit（rebase，冲突保留本地版）；.deps/.pipcache/__pycache__ 已全部移出版本库
+- HEAD 文件清单：.gitignore/LICENSE/README/WORKLOG/cordis.patch.yml/package.json/src/index.js/docs/reference/cosy.rs/tools 两个探针 —— 干净
