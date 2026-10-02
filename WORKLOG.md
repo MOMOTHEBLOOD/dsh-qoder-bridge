@@ -19,3 +19,14 @@
 - 安全约束（Mimosa）：网关出站仅 http/https、host 白名单（gateway.qoder.com.cn / api3.qoder.sh）、拒绝内网地址
 - 已知风险：上游协议随时可能变化；ToS/风控自担，只连自己账号
 
+## 2026-10-02 23:30 插件 v0.1 骨架落地
+
+- 产出：package.json（dsh.bundle.patch + dsh.client.inject 双端声明）、cordis.patch.yml（insert id=llm-qoder）、src/index.js（三相位：凭据发现 → loopback shim → provider 注册 + qoder_bridge_status 诊断工具 + status.json/events.jsonl 留痕）
+- 设计取舍：v0.1 shim 走 CLI 隔离派（spawn qoderclicn，PAT 注入，prompt 落盘），不手搓 COSY；provider 注册走 pi-ai 契约（对照 zlZayn adapter.ts：模型 descriptor = {id, provider, baseUrl: shim/v1, apiKey: shim共享密钥}）
+- 安全：Mimosa 拦截了一次路径穿越写入，已按建议加 resolveInside 根目录边界校验 + 文件名白名单；shim 监听 127.0.0.1 随机端口 + 共享密钥鉴权
+- 待验证（首次真装时）：
+  1. 宿主 llm seam 确切名称（inject 数组对照 zlZayn src/index.ts）
+  2. pi-ai createProvider descriptor 形状按宿主报错修正
+  3. qoderclicn 的单次调用参数（--prompt/--max-output-tokens 对照 qoder-proxy runCli）
+- 依赖用户动作：npm i -g @qodercn-ai/qoderclicn && qoderclicn login（凭据落 ~/.qoderworkcn）
+

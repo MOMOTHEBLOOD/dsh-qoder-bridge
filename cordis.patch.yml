@@ -1,0 +1,5 @@
+# 注册 Qoder provider；不改动 profile 当前默认模型。
+# 登录态复用 Qoder CN CLI（qoderclicn login → ~/.qoderworkcn），不另起 OAuth。
+- insert:
+    - id: llm-qoder
+      name: dsh-qoder-bridge
