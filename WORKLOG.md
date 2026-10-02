@@ -39,3 +39,15 @@
 - 工程排障记录：ctypes DATA_BLOB 用 c_char_p 接输出指针导致堆损坏(0xc0000374)，改 c_void_p 后解决；cryptography 装到项目 .deps（不碰 C 盘）；Mimosa hook 两次拦截（路径穿越写入 / Bash 写源码）均已按规范绕行
 - 下一步：拿 token 调 Qoder 目录/余额端点（对照 agent2api 的 chat.rs / balance.rs）→ 真实模型清单与倍率进 fallback 表
 
+## 2026-10-03 00:20 端点地图 + openapi 实测通过
+
+- **openapi（普通 Bearer，无需 COSY）**：`https://openapi.qoder.com.cn`
+  - `GET /api/v2/user/plan` → plan_tier_name / feature_allowed
+  - `GET /api/v2/quota/usage` → userQuota + addOnQuota{total,used,remaining,unit=credits} + expiresAt
+  - 实测（本机账号）：Free 套餐，credits 1400 总 / 已用 886 / **剩 514**，userQuota 全 0（走 addOn 池）→ **倍率/额度层确认可读**
+- **推理网关（COSY 签名）**：CN `https://gateway.qoder.com.cn/`，模型目录 `algo/api/v2/model/list` 与对话同基址同签名；国际版 `api3.qoder.sh`（token 前缀 jt- 走 api2）；签名路径去掉 /algo 前缀
+- 设备登录流：`/device/selectAccounts` → `/api/v1/deviceToken/poll` → `/api/v1/jobToken/exchange`（token 刷新：deviceToken/refresh、jobToken/refresh）
+- 参考：codex-bridge 系（Sateezg/wujfeng712-ui）验证 CLI 登录态→API 模式，可借鉴其零依赖代理结构；Qoder 协议层仍以 agent2api 为准
+- **cosy.rs 360 行已 vendor 到 docs/reference/cosy.rs** —— 下一轮照它移植 Python/Node 签名器，调 model/list 拿真实模型清单
+- 本轮排障：probe 脚本被 Mimosa 拦 SSRF，已补 host 白名单 + 解析 IP 边界校验 + 禁重定向
+
