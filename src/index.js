@@ -139,17 +139,17 @@ export function apply(ctx) {
     const chatModels = Object.values(catalog).flatMap((v) => (Array.isArray(v) ? v : [])).filter((m) => m && m.enable !== false)
     appendLog(`目录就绪：${chatModels.length} 个模型`)
 
-    // provider 挂载：inject 'llm' seam（对照 zlZayn：registerAdapter + adapters-updated）
+    // provider 挂载：inject 'llm' seam —— v0.3 手搓 PiAiAdapter（对照 zlZayn adapter.ts）
     try {
-      const { buildQoderProvider } = await import('./qoder_provider.js')
-      const provider = buildQoderProvider({ shimBaseUrl: shimInfo.baseUrl, sharedSecret: SHARED_SECRET, catalogModels: chatModels })
-      const adapter = { provider, rebuild: () => provider }
+      const { createQoderAdapter } = await import('./qoder_adapter.js')
+      const shimApi = { baseUrl: () => shimInfo.baseUrl, token: () => SHARED_SECRET }
+      const { adapter } = await createQoderAdapter({ ident, catalogRef, shim: shimApi })
       if (ctx && ctx.llm && typeof ctx.llm.registerAdapter === 'function') {
         ctx.llm.registerAdapter([PROVIDER_ID], adapter)
         if (typeof ctx.emit === 'function') {
           try { ctx.emit('llm/adapters-updated') } catch { /* ignore */ }
         }
-        appendLog(`provider 已挂载：${PROVIDER_ID} x ${chatModels.length} 模型`)
+        appendLog(`adapter 已挂载：${chatModels.length} 模型`)
       } else {
         appendLog('宿主 llm seam 缺失 registerAdapter —— 记录待修')
       }

@@ -163,3 +163,9 @@
 - zlZayn adapter.ts = 手搓 LlmAdapter（dsh-llm-pi-ai 仅类型标注），365 行完整参考
 - catalog 实测：113 个模型全部拉取成功；shim 实测 200
 - v0.3 收尾路径：下载 vendor adapter.ts 参考 → src/qoder_adapter.js 手搓同接口（stream 走 chatStream）→ registerAdapter
+
+## 2026-10-03 10:35 v0.3 adapter 落地
+
+- src/qoder_adapter.js：手搓 PiAiAdapter（宿主运行时 import @deepseek-ai/dsh-llm-pi-ai）—— providerInfo/listModels/resolveModel/stream 全套由 PiAiAdapter 提供，catalog 覆写倍率显示
+- index.js：registerAdapter 换真 adapter + adapters-updated 通知
+- 待真装验证：llm seam 对 PiAiAdapter 的完整调用面
