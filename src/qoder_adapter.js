@@ -3,7 +3,7 @@
  * PiAiAdapter 来自宿主内置 @deepseek-ai/dsh-llm-pi-ai（运行时动态 import）。
  * 模型经 loopback shim 的 /v1（OpenAI 兼容）→ qoder_chat 直连 Qoder 网关。
  */
-import { createProvider } from '@earendil-works/pi-ai/models'
+import { createProvider } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 
 const NO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }

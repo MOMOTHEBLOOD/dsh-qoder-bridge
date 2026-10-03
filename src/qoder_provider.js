@@ -2,7 +2,7 @@
  * Qoder provider —— pi-ai 形状（对照 zlZayn adapter + ant-ling 工厂）。
  * 模型指向 loopback shim 的 /v1（OpenAI 兼容），由 shim 转译到 Qoder 网关。
  */
-import { createProvider } from '@earendil-works/pi-ai/models'
+import { createProvider } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 
 const ZEROS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }

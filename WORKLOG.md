@@ -169,3 +169,42 @@
 - src/qoder_adapter.js：手搓 PiAiAdapter（宿主运行时 import @deepseek-ai/dsh-llm-pi-ai）—— providerInfo/listModels/resolveModel/stream 全套由 PiAiAdapter 提供，catalog 覆写倍率显示
 - index.js：registerAdapter 换真 adapter + adapters-updated 通知
 - 待真装验证：llm seam 对 PiAiAdapter 的完整调用面
+
+## 2026-10-03 11:0x 接替（Bubby/WorkBuddy 侧）：MODULE_NOT_FOUND 已修，待重启验证
+
+- 承接原因：ZCode 额度耗尽。读 `.zcode\cli\db\db.sqlite`（只读副本）+ 本 WORKLOG 接管。
+- **master 实测症状**：DSH 启动后 UI 不出现 Qoder 模型。插件自身日志
+  `C:\Users\MCVSalter\.dsh\qoder-bridge\events.jsonl` 实锤：凭据 OK / shim 就绪 /
+  **目录就绪：113 个模型** ✓，但 **provider 挂载失败（降级）**：
+  `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-llm-pi-ai'`
+  （此前打地鼠的 dsh-environment / cordis / yaml / cordis-plugin-loader 同因）。
+- **根因**："深藏"把宿主包放到了 `node_modules/@deepseek-ai/node_modules/dsh-llm-pi-ai`
+  （**非作用域名**），且 `@deepseek-ai/node_modules/@deepseek-ai/` 建了**空目录**——
+  作用域解析永远差一层；插件自身代码（src/）在 @deepseek-ai 作用域外，更够不着。
+- **修复（最小侵入，不动嵌套层）**：顶层补两个 junction
+  `node_modules/@deepseek-ai/dsh-llm-pi-ai -> node_modules/@deepseek-ai/node_modules/dsh-llm-pi-ai`
+  `node_modules/@deepseek-ai/dsh-llm      -> node_modules/@deepseek-ai/node_modules/dsh-llm`
+  验证：node 从插件目录 resolve 全 OK；`import('./src/qoder_adapter.js')` ESM 通过
+  （导出 createQoderAdapter）。pi-ai 裸名 require 报 NOT_EXPORTED 属正常（仅 ESM 条件）。
+- ⚠️ 注意：junction 在 node_modules 里，**下次 npm install 可能被清**——重装依赖后需重建
+  （本条目即提醒）。
+- 待办：master 重启 DSH → 查 events.jsonl 应无"挂载失败" → UI 模型组应出现
+  Auto / Qwen3.8-Max / Qwen3.8-Flash… → 对话实测。
+
+## 2026-10-03 11:2x 接替第二轮：pi-ai 版本错位修正（11:10 CallId 报错的真因）
+
+- 11:10 实测：junction 生效后模块能加载了，但 **`@deepseek-ai/dsh-llm` 在 DSH 运行时被
+  强制解析到 asar 内置版（v0.2.0-rc.2，导出 ToolCallId）**，而 npm 的 dsh-llm-pi-ai rc.1
+  要 import `CallId`（rc.1 dsh-llm 才有）→ 版本错位 SyntaxError。
+  **实证：宿主对 `@deepseek-ai/*` 是 asar 优先解析，插件带 npm 版必撞版本错位。**
+- 修正（全部对齐 asar rc.2 这套）：
+  ① 从 asar 解包 `dsh-llm` / `dsh-llm-pi-ai`（各 v0.2.0-rc.2）到
+     `node_modules/@deepseek-ai/node_modules/@deepseek-ai/`（作用域正确位置，替换空目录）
+  ② 从 asar 解包 `@earendil-works/pi-ai` **v0.87.1** 到顶层（替换 npm v1.0.0，v1.0.0 备份在
+     `pi-ai.npm-v1.0.0-bak/`）——rc.2 是按 v0.87.1 构建的
+  ③ src 两文件 pi-ai 导入改**根导入**：v0.87.1 无 `./models` 子路径，但根有
+     `export * from "./models.js"` → createProvider 依然可用
+- 验证：node 全图 import OK（index.js / qoder_adapter / qoder_provider 三模块全过）
+- 待办不变：master 重启 DSH → events.jsonl 应无"挂载失败" → UI 出现 Qoder 模型组 → 对话实测。
+- 教训：**宿主对 @deepseek-ai/* 的解析是 asar 优先，插件自带 npm 版宿主包 = 版本错位温床；
+  正解是从 asar 解包同版到真实文件 + junction。**
