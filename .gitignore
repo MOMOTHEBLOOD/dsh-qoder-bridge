@@ -5,5 +5,3 @@ config.local.json
 .deps/
 .pipcache/
 tools/__pycache__/
-.tmp/
-_uninstalled/
