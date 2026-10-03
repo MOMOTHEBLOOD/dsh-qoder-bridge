@@ -102,3 +102,13 @@
 - 实测：chat 组 14 模型，含倍率（Qwen3.8-Flash 0.0 免费 / Qwen3.7-Plus 0.1 / Auto与3.8-Max 0.5）
 - 排障：node publicEncrypt 自带 PKCS#1 v1.5 填充，手工再垫导致超长——直接喂原文
 - 剩余：①对话接口（encodeBody+信封SSE）②pi-ai provider 挂载（api 字段）③client UI 分组
+
+## 2026-10-03 02:25 对话链路侦察完成
+
+- 端点：`{gateway}algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`（POST）
+- 体：protocol::build_upstream_body(upstreamKey, model_config, messages) → **encode_body 编码后的字节**（先编码后签名）
+- 头：COSY 全套（body=编码后体）+ Content-Type: application/json + Accept: text/event-stream + `X-Model-Key: <upstreamKey>` + `X-Model-Source`
+- upstreamKey：model/list 条目里的 `upstreamKey` 字段（display key → upstream 映射）
+- SSE 信封：`data:` 行 = JSON 信封；字符串值**再是一层 JSON**（双层编码）；`[DONE]` 结束
+- 消息映射：user/assistant/system/tool → 各自规范化；thinking 标签 `<thinking>..</thinking>`；图片转 parts
+- 待下轮收尾：①build_upstream_body 的完整字段表（protocol.rs 后半）②信封内字段名→content 提取（stream.rs 60-118）③Python probe_chat 验证 → Node 落地
