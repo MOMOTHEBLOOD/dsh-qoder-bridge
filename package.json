@@ -1,6 +1,6 @@
 {
   "name": "dsh-qoder-bridge",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "把 Qoder CLI(qoderclicn) 登录态的模型接入 DSH —— 仿 dsh-workbuddy-bridge",
   "type": "module",
   "main": "src/index.js",
