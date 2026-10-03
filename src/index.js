@@ -142,45 +142,56 @@ export function startShim({ token, log }) {
   })
 }
 
-export async function apply(ctx) {
+export function apply(ctx) {
+  // cordis 契约：apply 必须同步返回普通对象（handoff 实测），异步活全部 fire-and-forget。
   appendLog('apply 开始')
-  const cred = readCredentials()
-
-  // 相位2：shim + provider 注册
   let shimInfo = null
-  if (cred) {
-    shimInfo = await startShim({ token: cred.token, log: (m) => appendLog(m) })
-    appendLog(`shim 就绪 ${shimInfo.baseUrl}`)
-  } else {
-    appendLog('未发现凭据（qoderclicn login 未执行）—— 降级为隐藏态注册')
-  }
-
-  // provider 注册：v0.1 走 pi-ai 契约（对照 workbuddy-bridge adapter.ts）。
-  // TODO(live-install): createProvider 的 profile 需要 @deepseek-ai/dsh-llm-pi-ai 的
-  // ResolvedPiAiProviderProfile；首次真装时按宿主报错修正 descriptor 形状。
-  try {
-    const { createProvider } = await import('@earendil-works/pi-ai')
-    const models = DEFAULT_MODELS.map((id) => ({
-      id,
-      provider: PROVIDER_ID,
-      baseUrl: shimInfo ? `${shimInfo.baseUrl}/v1` : 'http://127.0.0.1:9',
-      apiKey: SHARED_SECRET,
-    }))
-    const provider = createProvider({ id: PROVIDER_ID, models })
-    if (ctx && typeof ctx.registerProvider === 'function') {
-      ctx.registerProvider(provider)
-      appendLog(`provider 已注册：${PROVIDER_ID} x ${models.length} 模型`)
-    } else if (ctx && ctx.llm && typeof ctx.llm.registerProvider === 'function') {
-      ctx.llm.registerProvider(provider)
-      appendLog(`provider 已注册(llm seam)：${PROVIDER_ID}`)
+  const boot = (async () => {
+    const cred = readCredentials()
+    if (cred) {
+      shimInfo = await startShim({ token: cred.token, log: (m) => appendLog(m) })
+      appendLog(`shim 就绪 ${shimInfo.baseUrl}`)
     } else {
-      appendLog('宿主未暴露 provider 注册 seam —— 记录待修')
+      appendLog('未发现凭据（qoderclicn login 未执行）—— 降级为隐藏态注册')
     }
-  } catch (e) {
-    appendLog(`provider 注册失败（降级）：${String(e).slice(0, 160)}`)
+
+    // provider 注册：v0.1 走 pi-ai 契约（对照 workbuddy-bridge adapter.ts）。
+    try {
+      const { createProvider } = await import('@earendil-works/pi-ai')
+      const models = DEFAULT_MODELS.map((id) => ({
+        id,
+        provider: PROVIDER_ID,
+        baseUrl: shimInfo ? `${shimInfo.baseUrl}/v1` : 'http://127.0.0.1:9',
+        apiKey: SHARED_SECRET,
+      }))
+      const provider = createProvider({ id: PROVIDER_ID, models })
+      if (ctx && typeof ctx.registerProvider === 'function') {
+        ctx.registerProvider(provider)
+        appendLog(`provider 已注册：${PROVIDER_ID} x ${models.length} 模型`)
+      } else if (ctx && ctx.llm && typeof ctx.llm.registerProvider === 'function') {
+        ctx.llm.registerProvider(provider)
+        appendLog(`provider 已注册(llm seam)：${PROVIDER_ID}`)
+      } else {
+        appendLog('宿主未暴露 provider 注册 seam —— 记录待修')
+      }
+    } catch (e) {
+      appendLog(`provider 注册失败（降级）：${String(e).slice(0, 160)}`)
+    }
+
+    writeStatus({
+      credentialFound: !!cred,
+      credentialSource: cred?.source || null,
+      shim: shimInfo?.baseUrl || null,
+      models: DEFAULT_MODELS,
+    })
+  })()
+  if (ctx && typeof ctx.effect === 'function') {
+    ctx.effect(() => boot)
+  } else {
+    boot.catch((e) => appendLog(`boot 失败：${String(e).slice(0, 160)}`))
   }
 
-  // 诊断/留痕工具：DSH 会话里可直接查桥状态
+  // 诊断/留痕工具：同步注册，DSH 会话里可直接查桥状态
   try {
     ctx?.tools?.register?.(
       {
@@ -200,12 +211,6 @@ export async function apply(ctx) {
     )
   } catch { /* ignore */ }
 
-  writeStatus({
-    credentialFound: !!cred,
-    credentialSource: cred?.source || null,
-    shim: shimInfo?.baseUrl || null,
-    models: DEFAULT_MODELS,
-  })
-  appendLog('apply 结束')
-  return { shim: shimInfo }
+  appendLog('apply 结束（同步部分）')
+  return { shim: () => shimInfo }
 }

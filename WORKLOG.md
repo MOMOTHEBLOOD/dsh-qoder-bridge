@@ -57,3 +57,10 @@
 - 远端：github.com/MOMOTHEBLOOD/dsh-qoder-bridge（main，863f7e3）
 - 整合了远端 Initial commit（rebase，冲突保留本地版）；.deps/.pipcache/__pycache__ 已全部移出版本库
 - HEAD 文件清单：.gitignore/LICENSE/README/WORKLOG/cordis.patch.yml/package.json/src/index.js/docs/reference/cosy.rs/tools 两个探针 —— 干净
+
+## 2026-10-03 00:50 首次真装联调 v0.1.1
+
+- 报错：`Invalid effect at safeCollect`（cordis fiber reload 失败，连带其它插件激活失败）
+- 根因1：cordis.patch.yml 用了 zlZayn 新版列表式 insert，本机 cordis 只认 handoff 简洁式（insert: id/name）——已改
+- 根因2：apply 是 async 返回 Promise，违反同步 effect 契约——已改为同步 apply + 异步活走 ctx.effect / fire-and-forget
+- 版本 0.1.1，用户拉取方式：重新执行 pnpm add <repo>（或 git pull 后 pnpm add ./）
