@@ -70,3 +70,10 @@
 - v0.1.1 修复未生效（pnpm lockfile 钉死旧 commit，用户重复 add 拉不到新 HEAD），旧代码再次炸掉 DSH 启动（Invalid effect at safeCollect 全局失败）
 - 恢复操作：`pnpm remove dsh-qoder-bridge`（清 node_modules+dependencies）+ 手工摘除 profile package.json bundles 清单中的残留行 —— **未动其它 9 个 bundle**
 - 流程修正（防再犯）：① 后续联调一律用独立 profile（qoder-test），desktop profile 只装通过最小加载测试的版本 ② 每次发版升版本号 ③ 先做"空 apply 最小对照"二分定位，再上真逻辑
+
+## 2026-10-03 01:20 根因实锤 v0.1.3
+
+- 隔离 profile 复现：`@deepseek-ai/dsh-environment` 等 @deepseek-ai 全系在公共 npm **404**——它们是宿主 app.asar 内置包
+- 我声明 pi-ai 依赖拖出 404 依赖树 = 安装失败根因；dsh.client.inject 声明也超出 handoff 形状（client-hmr 等 clientModules 的线索）
+- v0.1.3：零依赖 + 移除 client.inject + provider 注册挂起 —— 完全对齐 handoff 形状（本机唯一实测可加载的形态）
+- 测试 profile：D:/1-3HD/dsh/profiles/qoder-test 已建，desktop 不再用于联调

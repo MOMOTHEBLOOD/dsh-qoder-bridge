@@ -152,37 +152,18 @@ export function apply(ctx) {
       shimInfo = await startShim({ token: cred.token, log: (m) => appendLog(m) })
       appendLog(`shim 就绪 ${shimInfo.baseUrl}`)
     } else {
-      appendLog('未发现凭据（qoderclicn login 未执行）—— 降级为隐藏态注册')
+      appendLog('未发现凭据 —— 降级为仅诊断模式')
     }
 
-    // provider 注册：v0.1 走 pi-ai 契约（对照 workbuddy-bridge adapter.ts）。
-    try {
-      const { createProvider } = await import('@earendil-works/pi-ai')
-      const models = DEFAULT_MODELS.map((id) => ({
-        id,
-        provider: PROVIDER_ID,
-        baseUrl: shimInfo ? `${shimInfo.baseUrl}/v1` : 'http://127.0.0.1:9',
-        apiKey: SHARED_SECRET,
-      }))
-      const provider = createProvider({ id: PROVIDER_ID, models })
-      if (ctx && typeof ctx.registerProvider === 'function') {
-        ctx.registerProvider(provider)
-        appendLog(`provider 已注册：${PROVIDER_ID} x ${models.length} 模型`)
-      } else if (ctx && ctx.llm && typeof ctx.llm.registerProvider === 'function') {
-        ctx.llm.registerProvider(provider)
-        appendLog(`provider 已注册(llm seam)：${PROVIDER_ID}`)
-      } else {
-        appendLog('宿主未暴露 provider 注册 seam —— 记录待修')
-      }
-    } catch (e) {
-      appendLog(`provider 注册失败（降级）：${String(e).slice(0, 160)}`)
-    }
-
+    // v0.1.3：provider 注册暂缓 —— pi-ai/@deepseek-ai 系不在公共 npm（404 实测），
+    // 必须走宿主运行时模块；待 bundle 加载契约验证通过后，用宿主注入的 seam 单独试验。
+    appendLog('provider 注册挂起（v0.2 通过宿主 seam 试验），当前能力：留痕 + 诊断工具 + shim')
     writeStatus({
       credentialFound: !!cred,
       credentialSource: cred?.source || null,
       shim: shimInfo?.baseUrl || null,
       models: DEFAULT_MODELS,
+      provider: 'pending-v0.2',
     })
   })()
   if (ctx && typeof ctx.effect === 'function') {
