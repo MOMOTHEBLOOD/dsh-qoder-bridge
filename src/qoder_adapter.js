@@ -42,6 +42,26 @@ export function createQoderAdapter({ ident, catalogRef, shim, resolveAttachments
     return 131072
   }
 
+  // ★ 倍率后缀（对齐隔壁 workbuddy-bridge 的观感）：
+  //   免费 → 【免费】；常规 → 【x0.5】；有错峰促销 → 【x0.5/错峰x0.2(22:00-08:00)】
+  const priceSuffixOf = (m) => {
+    const pf = Number(m.price_factor)
+    // ★ 免费只按 price_factor===0 判（目录的 is_free 标志不可靠：qmodel_38max 标了
+    //   is_free=true 但 price_factor=0.5 且有错峰折扣）
+    if (!Number.isFinite(pf) || pf === 0) return '【免费】'
+    let tag = `x${pf}`
+    const promo = m.promotion
+    const df = promo ? Number(promo.discount_factor) : NaN
+    if (Number.isFinite(df) && df > 0 && df !== 1) {
+      const eff = Number((pf * df).toFixed(2))
+      const win = promo.window_start && promo.window_end
+        ? `(${String(promo.window_start).slice(0, 5)}-${String(promo.window_end).slice(0, 5)})`
+        : ''
+      tag += `/错峰x${eff}${win}`
+    }
+    return `【${tag}】`
+  }
+
   const buildModels = () => {
     const baseUrl = shim.baseUrl() + '/v1'
     const chat = catalogRef.get()?.chat
@@ -54,7 +74,7 @@ export function createQoderAdapter({ ident, catalogRef, shim, resolveAttachments
       if (!m || m.enable === false || !m.key || seen.has(m.key)) continue
       seen.set(m.key, {
         id: m.key,
-        name: m.display_name || m.key,
+        name: (m.display_name || m.key) + priceSuffixOf(m),
         api: 'openai-completions',
         provider: providerId,
         baseUrl,
