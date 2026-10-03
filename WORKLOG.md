@@ -155,3 +155,11 @@
 - 报错：overlay cordis.patch.yml must be a top-level YAML array
 - 实锤：handoff 真实文件 = 顶层数组 + insert 含列表（zlZayn 同款）——v0.1.0 原始格式本来就是对的，当时误判为 patch 问题（真凶是 404 依赖树），README 示例的简洁式误导了修正方向
 - junction 挂载下修复即时生效：推送后重启 DSH 即可
+
+## 2026-10-03 10:20 llm seam 实测通过, adapter 契约明确
+
+- registerAdapter 被调用成功（llm seam 存在实证），仅 adapter 形状不符：DSH 调 adapter.providerInfo() 报缺方法
+- LlmAdapter 鸭子类型契约（app.asar 提取）：providerInfo(provider)→{id,name} / providerRetryPolicy / listModels(provider) / resolveModel(provider,model,signal) / stream 等方法
+- zlZayn adapter.ts = 手搓 LlmAdapter（dsh-llm-pi-ai 仅类型标注），365 行完整参考
+- catalog 实测：113 个模型全部拉取成功；shim 实测 200
+- v0.3 收尾路径：下载 vendor adapter.ts 参考 → src/qoder_adapter.js 手搓同接口（stream 走 chatStream）→ registerAdapter
