@@ -19,7 +19,7 @@ import { fetchCatalog, findModel, chatStream } from './qoder_chat.js'
 import { buildQoderProvider } from './qoder_provider.js'
 
 export const name = 'qoder-bridge'
-export const inject = ['llm', 'tools', 'systemPrompt']
+export const inject = ['llm', 'attachments', 'tools', 'systemPrompt']
 
 const PROVIDER_ID = 'qoder'
 const SHARED_SECRET = process.env.DSH_QODER_SHARED || crypto.randomBytes(24).toString('hex')
@@ -143,7 +143,12 @@ export function apply(ctx) {
     try {
       const { createQoderAdapter } = await import('./qoder_adapter.js')
       const shimApi = { baseUrl: () => shimInfo.baseUrl, token: () => SHARED_SECRET }
-      const { adapter } = await createQoderAdapter({ ident, catalogRef, shim: shimApi })
+      // ★ 附件服务：DSH 宿主在 cordis 上下文暴露 "attachments"（zlZayn 同款接线），
+      //   Qoder 的 is_vl 模型要走真图片路径必须提供（否则 PiAiAdapter 抛 UNSUPPORTED_CONTENT）
+      const resolveAttachments = () => {
+        try { return ctx?.get?.('attachments') ?? undefined } catch { return undefined }
+      }
+      const { adapter } = await createQoderAdapter({ ident, catalogRef, shim: shimApi, resolveAttachments })
       if (ctx && ctx.llm && typeof ctx.llm.registerAdapter === 'function') {
         ctx.llm.registerAdapter([PROVIDER_ID], adapter)
         if (typeof ctx.emit === 'function') {

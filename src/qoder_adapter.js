@@ -25,7 +25,7 @@ const INERT_AUTH = {
   },
 }
 
-export function createQoderAdapter({ ident, catalogRef, shim }) {
+export function createQoderAdapter({ ident, catalogRef, shim, resolveAttachments }) {
   const providerId = 'qoder'
   const displayName = 'Qoder'
 
@@ -58,7 +58,7 @@ export function createQoderAdapter({ ident, catalogRef, shim }) {
         api: 'openai-completions',
         provider: providerId,
         baseUrl,
-        input: ['text'],
+        input: m.is_vl ? ['text', 'image'] : ['text'],
         reasoning: !!m.is_reasoning,
         cost: NO_COST,
         contextWindow: contextWindowOf(m),
@@ -108,13 +108,14 @@ export function createQoderAdapter({ ident, catalogRef, shim }) {
       profiles: () => profiles,
       auth: INERT_AUTH,
       resolveApiKey: async () => shim.token(),
+      // ★ 附件服务（ctx.get("attachments")，zlZayn 同款接线）：
+      //   提供后 is_vl 模型走真图片路径；未提供时回退剥块降级
+      ...resolveAttachments ? { resolveAttachments } : {},
     })
-    // ★ 图片/文件优雅降级：DSH 的持久附件服务未接（zlZayn 同样未接），
-    //   消息含 image/file 块时 PiAiAdapter 直接抛 UNSUPPORTED_CONTENT
-    //   （"pi-ai image input requires the durable attachment service"）。
-    //   在流入口剥掉这些块并留文字占位 → Qoder 通道纯文本对话照常可用。
-    const rawStream = adapter.stream.bind(adapter)
-    adapter.stream = (options) => rawStream(stripHeavyBlocks(options))
+    if (!resolveAttachments) {
+      const rawStream = adapter.stream.bind(adapter)
+      adapter.stream = (options) => rawStream(stripHeavyBlocks(options))
+    }
     return { adapter }
   })
 }
