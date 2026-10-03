@@ -58,7 +58,7 @@ export function createQoderAdapter({ ident, catalogRef, shim }) {
         api: 'openai-completions',
         provider: providerId,
         baseUrl,
-        input: m.is_vl ? ['text', 'image'] : ['text'],
+        input: ['text'],
         reasoning: !!m.is_reasoning,
         cost: NO_COST,
         contextWindow: contextWindowOf(m),
@@ -103,11 +103,33 @@ export function createQoderAdapter({ ident, catalogRef, shim }) {
   const profiles = new Map([[providerId, profile]])
 
   // PiAiAdapter 由宿主内置包提供（公共 npm 无此包）
-  return import('@deepseek-ai/dsh-llm-pi-ai').then(({ PiAiAdapter }) => ({
-    adapter: new PiAiAdapter({
+  return import('@deepseek-ai/dsh-llm-pi-ai').then(({ PiAiAdapter }) => {
+    const adapter = new PiAiAdapter({
       profiles: () => profiles,
       auth: INERT_AUTH,
       resolveApiKey: async () => shim.token(),
-    }),
-  }))
+    })
+    // ★ 图片/文件优雅降级：DSH 的持久附件服务未接（zlZayn 同样未接），
+    //   消息含 image/file 块时 PiAiAdapter 直接抛 UNSUPPORTED_CONTENT
+    //   （"pi-ai image input requires the durable attachment service"）。
+    //   在流入口剥掉这些块并留文字占位 → Qoder 通道纯文本对话照常可用。
+    const rawStream = adapter.stream.bind(adapter)
+    adapter.stream = (options) => rawStream(stripHeavyBlocks(options))
+    return { adapter }
+  })
+}
+
+const HEAVY_TYPES = new Set(['image', 'file'])
+function stripHeavyBlocks(options) {
+  if (!options || !Array.isArray(options.messages)) return options
+  let touched = false
+  const messages = options.messages.map((msg) => {
+    if (!Array.isArray(msg?.content) || !msg.content.some((b) => b && HEAVY_TYPES.has(b.type))) return msg
+    touched = true
+    const content = msg.content
+      .filter((b) => !(b && HEAVY_TYPES.has(b.type)))
+      .concat([{ type: 'text', text: '[本消息含图片/文件：Qoder 通道暂不支持，已省略]' }])
+    return { ...msg, content }
+  })
+  return touched ? { ...options, messages } : options
 }
