@@ -149,3 +149,9 @@
 - 实测（tools/test_shim.mjs）：POST OpenAI 格式 → HTTP 200 → 「连接成功」
 - provider 注册代码就位（registerAdapter + adapters-updated），待真装验证 llm seam
 - 修坑：pi-ai 子路径导出双 .js
+
+## 2026-10-03 10:00 patch 格式修正
+
+- 报错：overlay cordis.patch.yml must be a top-level YAML array
+- 实锤：handoff 真实文件 = 顶层数组 + insert 含列表（zlZayn 同款）——v0.1.0 原始格式本来就是对的，当时误判为 patch 问题（真凶是 404 依赖树），README 示例的简洁式误导了修正方向
+- junction 挂载下修复即时生效：推送后重启 DSH 即可
