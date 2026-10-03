@@ -112,3 +112,17 @@
 - SSE 信封：`data:` 行 = JSON 信封；字符串值**再是一层 JSON**（双层编码）；`[DONE]` 结束
 - 消息映射：user/assistant/system/tool → 各自规范化；thinking 标签 `<thinking>..</thinking>`；图片转 parts
 - 待下轮收尾：①build_upstream_body 的完整字段表（protocol.rs 后半）②信封内字段名→content 提取（stream.rs 60-118）③Python probe_chat 验证 → Node 落地
+
+## 2026-10-03 02:40 里程碑：对话链路全通 🎉
+
+- probe_chat.py 实测：auto 与 Qwen3.8-Max 均正常回答「连接成功」
+- upstreamKey = 模型 key 本身（qfmodel/auto/qmodel_38max...）
+- qfmodel 单独 400（node:oa_qwen-plus-main 执行失败）—— 该免费节点自身问题，不影响其它模型，后续观察
+- 至此 Qoder 协议层 100
+## 2026-10-03 02:40 里程碑：对话链路全通
+
+- probe_chat.py 实测：auto 与 Qwen3.8-Max 均正常回答「连接成功」
+- upstreamKey = 模型 key 本身（qfmodel/auto/qmodel_38max...）
+- qfmodel 单独 400（node:oa_qwen-plus-main 执行失败）—— 该免费节点自身问题，不影响其它模型
+- 至此 Qoder 协议层 100% 逆向完成：凭据解密/COSY签名/模型清单(倍率+促销)/对话(SSE信封)
+- 剩余：Node 版 chat + pi-ai provider 挂载（api 字段）+ client UI 分组 —— 纯工程移植，无未知数
