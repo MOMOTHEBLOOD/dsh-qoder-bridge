@@ -126,3 +126,10 @@
 - qfmodel 单独 400（node:oa_qwen-plus-main 执行失败）—— 该免费节点自身问题，不影响其它模型
 - 至此 Qoder 协议层 100% 逆向完成：凭据解密/COSY签名/模型清单(倍率+促销)/对话(SSE信封)
 - 剩余：Node 版 chat + pi-ai provider 挂载（api 字段）+ client UI 分组 —— 纯工程移植，无未知数
+
+## 2026-10-03 09:15 里程碑：Node 版对话打通
+
+- src/qoder_chat.js：fetchCatalog/findModel/chatStream(SSE 信封解码→delta 回调)/chat
+- 端到端实测（node -e）：Auto 倍率 0.5，回答「连接成功」
+- 至此插件运行时三件套全在纯 Node：凭据解密/COSY 签名/对话流
+- 剩余：①shim 的 /v1/chat/completions 从 CLI-spawn 切换为 qoder_chat 直连 ②pi-ai provider 挂载（api 字段）③client UI 分组
