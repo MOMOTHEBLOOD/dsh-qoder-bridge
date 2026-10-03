@@ -94,3 +94,11 @@
 - 已知模型：Auto / Qwen3.8-Max(0.5) / Qwen3.8-Flash(0.0 免费) 等
 - 待办 v0.2：①对话接口（信封 SSE）打通 ②Node 版签名器落地插件 ③凭据源切换 IDE auth.v1.dat（解密已验证）④provider seam 挂载
 - 备注：Mimosa 提示 MD5 弱算法 —— 为上游协议要求（服务端按 MD5 验签），非安全选择，保持兼容
+
+## 2026-10-03 02:10 里程碑：Node 版签名器端到端通过
+
+- src/qoder_cosy.js（签名+编码）+ src/qoder_credentials.js（IDE 凭据解密）+ tools/test_node_cosy.mjs
+- 端到端：powershell DPAPI 解 os_crypt 密钥 → node GCM 解 auth.v1.dat → COSY 签名 → model/list HTTP 200
+- 实测：chat 组 14 模型，含倍率（Qwen3.8-Flash 0.0 免费 / Qwen3.7-Plus 0.1 / Auto与3.8-Max 0.5）
+- 排障：node publicEncrypt 自带 PKCS#1 v1.5 填充，手工再垫导致超长——直接喂原文
+- 剩余：①对话接口（encodeBody+信封SSE）②pi-ai provider 挂载（api 字段）③client UI 分组
