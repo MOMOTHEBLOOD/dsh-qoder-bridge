@@ -238,16 +238,29 @@
 - 图片经 Qoder 通道 = v0.4 待办（需接 DSH 附件服务 seam）。
 - ⚠️ junction 在 node_modules 里，npm install 后需重建（11:0x 条目的提醒仍有效）。
 
-## 2026-10-03 21:4x 接 master 指令：让 qfmodel 可用（结论：不能，是上游坏节点）
+## 2026-10-03 21:4x 排查 qfmodel 不可用（★ 结论已修正两次，以 16:0x 条为准）
 
 背景：master 装了社区版 `@eghrhegpe/dsh-connect-qoder@0.4.2`（desktop profile），
 报两个错：① `503 rate_limit` ② `CONTEXT_WINDOW_EXCEEDED (Qwen3.8-Flash)`。
 master 明确要求 **qfmodel 是主力，不考虑换模型**。
 
-### 一、先纠正昨天的错误归因（重要）
+### ⚠️ 本节结论作废 —— 见文末 16:0x 条
+
+**本节的"上游坏节点"结论是错的。** 真相：master 未在插件设置卡片打开
+「最大上下文窗口」开关，qfmodel 因此只广告 200K → pi-ai 判溢出。
+master 打开开关后 qfmodel 正常。**qfmodel 没坏，是我误判。**
+
+误判根因（教训，务必记）：我在 21:4x 用 `tools/_diag_qfmodel.mjs` 打上游拿到
+`[FAIL]node:oa_qwen-plus-main msg:Execution failed: null`，就断定"服务端节点故障"。
+**但那是一个真实存在的上游瞬时/间歇故障，不是 qfmodel 的常态**——
+我把一次观测当成了稳定属性，且**没有做"同 key 重试 + 开关对照"就下结论**。
+正确的判据应该是：① 同一 key 多次重试是否稳定失败 ② 打开最大上下文开关后是否恢复。
+当时因为 master 说"不考虑换模型"，我急着给"不能修"的定论，**跳过了对照实验**。
+
+### 一、纠正昨天的错误归因（这部分仍然成立）
 
 昨天记的"qfmodel 的 context_config=null → 落 FALLBACK_CONTEXT_WINDOW=200000" **是错的**。
-今天实况探针（`tools/_probe_context.mjs` / `tools/_list_all_models.mjs`）打脸：
+今天实况探针（`tools/_probe_context.mjs` / `tools/_list_all_models.mjs`）纠正：
 
 ```
 qfmodel  context_config={"1M":1000000,"200K":200000,...,"400K":400000}
@@ -270,37 +283,37 @@ return FALLBACK_CONTEXT_WINDOW
 即：**关掉"最大上下文"开关时 → 200000；打开 → 1000000**。FALLBACK 只服务 auto
 这种真没发布的模型。
 
-### 二、已执行的补丁（低风险，保留）
+### 二、当时执行的补丁（★ 已按要求还原，见 16:0x 条）
 
-已装副本 `profiles/desktop/node_modules/@eghrhegpe/dsh-connect-qoder/lib/pi-model.js`：
-`FALLBACK_CONTEXT_WINDOW = 200000` → `1000000`，并加注释说明本机补丁来历与
-`npm install` 会覆盖。独立回读（`tools/_verify_installed_patch.mjs`）确认生效。
+当时把已装副本 `profiles/desktop/node_modules/@eghrhegpe/dsh-connect-qoder/lib/pi-model.js`
+的 `FALLBACK_CONTEXT_WINDOW` 200000 → 1000000。**现已还原回 200000**，
+SHA256（去 CR）与上游 0.4.4 参考版一致：`d9b3a218aa91d3a6865de5b60f7dfa84888415277530354461992134216c66e2`。
 
-**但要诚实**：这条补丁对 qfmodel **没有实际作用**（qfmodel 不走 FALLBACK）。
 真正影响窗口的是设置卡片的**「最大上下文窗口」开关**：
-打开后 qfmodel 从 200K → 1M（200K 对 DSH 长会话确实偏紧，这项建议开）。
+**打开后 qfmodel 从 200K → 1M。这就是本次的正解。**
 
-### 三、决定性发现：qfmodel 在 Qoder 服务端就是坏的
+### 三、（作废）当时以为的"决定性发现"
 
 `tools/_diag_qfmodel.mjs` 换各种请求形态打同一个 key：
 
 ```
-✓ qfmodel      thinking=off  HTTP 200  {"code":"400","message":"[FAIL]node:oa_qwen-plus-main msg:Execution failed: null"}
-✓ qfmodel      thinking=on   HTTP 200  同上（开不开思考都一样）
-✓ qmodel_38max thinking=off  HTTP 200  正常返回
-✓ qmodel_latest              HTTP 200  正常
-✓ q37fmodel                  HTTP 200  正常
-✓ dfmodel                    HTTP 200  正常
-✓ gfmodel                    HTTP 200  正常（stream 里回"收到"）
-✓ auto                       HTTP 200  正常（回"连通"）
+qfmodel      thinking=off  HTTP 200  {"code":"400","message":"[FAIL]node:oa_qwen-plus-main msg:Execution failed: null"}
+qfmodel      thinking=on   HTTP 200  同上
+qmodel_38max / qmodel_latest / q37fmodel / dfmodel / gfmodel / auto   全部正常
 ```
 
-**只有 qfmodel 一个 node 挂**（`oa_qwen-plus-main`），同族全部正常，
-与本机插件、协议、签名、thinking 开关、消息内容**全部无关**。
-注意 HTTP 状态是 200——错误藏在 SSE 信封的 `statusCodeValue:400` 里，
-所以表面上像"连接成功却无输出"。
+当时我据此断言"只有 qfmodel 一个 node 挂、是服务端故障"。**这个结论不成立**：
+该 400 是上游的间歇性故障（`oa_qwen-plus-main` 节点确实会偶发失败），
+但我**把一次观测当成了稳定属性**，且没做重试与开关对照。
+master 打开 1M 开关后 qfmodel 正常工作 → **qfmodel 是好的。**
 
-### 四、14 个模型的清单（供选型）
+**教训（要写进方法论）**：判定"上游坏了"至少需要
+① 同一目标**多次重试**看是否稳定复现；
+② 做**变量对照**（这里就是"最大上下文开关"开/关）。
+单次探测 + 急着下"不能修"的定论 = 伪结论。
+另外 `503 rate_limit / "Qoder is busy"` 本来就是排队瞬态，重试即过。
+
+### 四、14 个模型的清单（仍然有效，供选型参考）
 
 | key | 名称 | 倍率 | is_free | 窗口选项 | 默认 | max_in | VL |
 |---|---|---|---|---|---|---|---|
@@ -319,12 +332,38 @@ return FALLBACK_CONTEXT_WINDOW
 | kmodel | Kimi-K2.8-Preview | 0.8 | – | 同上 | 200K | 180K | Y |
 | kmodel_latest | Kimi-K3 | 1.4 | false | 同上 | 200K | 180K | Y |
 
-**免费档只有两个**：`qfmodel`（坏）与 `qmodel_38max`（0.5 倍率但 is_free=true，可用）。
-若不换模型的硬约束不可动摇，则**免费额度实际只能靠 qmodel_38max**；
-若可接受 0.1 倍率，`q37fmodel`/`dfmodel`/`gfmodel` 都是 0.1 且实测正常。
+**免费档只有两个**：`qfmodel`（倍率 0）与 `qmodel_38max`（0.5 倍率但 is_free=true）。
+两者**都可用**（此前"qfmodel 坏"是误判）。
+若可接受 0.1 倍率，`q37fmodel`/`dfmodel`/`gfmodel` 也都是 0.1 且实测正常。
 
 ### 五、遗留
 
-- qfmodel 坏节点是 Qoder 服务端问题，**只能等官方修**；建议加一层"自动跳过坏节点"。
-- `FALLBACK_CONTEXT_WINDOW` 补丁在 `npm install` 后会被覆盖（文件内已注明）。
-- 建议 master 在设置卡片打开「最大上下文窗口」开关（qfmodel/qmodel_38max 都会到 1M）。
+- ~~qfmodel 坏节点~~（作废）：qfmodel 正常，开 1M 开关即可。
+- `FALLBACK_CONTEXT_WINDOW` 补丁**已还原**，无残留（SHA256 已核）。
+- 有效结论：**插件设置卡片必须打开「最大上下文窗口」开关**，
+  否则所有模型的默认窗都是 200K，长会话/带图会撞 `CONTEXT_WINDOW_EXCEEDED`。
+
+---
+
+## 2026-10-03 16:0x ★ 结论修正：qfmodel 正常，是设置没开 1M
+
+master 反馈：**"是我铸币了，插件设置没开 1m 上下文"**。
+
+- 打开「最大上下文窗口」开关后 **qfmodel 正常工作** → 本次问题的**唯一真因**就是
+  该开关未开，`resolveContextWindow` 于是返回目录默认窗 200000，
+  DSH 长会话（尤其带图，base64 计入估算）超 200K 就被 pi-ai 拒发
+  → `CONTEXT_WINDOW_EXCEEDED (Qwen3.8-Flash)`。
+- **已按要求还原所有改动**：`lib/pi-model.js` 的
+  `FALLBACK_CONTEXT_WINDOW` 回到 `200000`，与上游 0.4.4 逐字节一致
+  （`diff --strip-trailing-cr` 无差异；去 CR 后 SHA256 双方均为
+  `d9b3a218aa91d3a6865de5b60f7dfa84888415277530354461992134216c66e2`）。
+  已装副本 = 出厂状态，**未被本机污染**。
+- 保留的资产：`tools/_list_all_models.mjs`（14 模型倍率/窗口全表，选型有用）、
+  `tools/_probe_context.mjs`（窗口实况探针）。诊断脚本可留作以后查上游抖动。
+- 保留的 `.gitignore` 两条（`.tmp/`、`_uninstalled/`）：这两个目录是解包产物，
+  不该进版本库，属正当卫生。
+
+**本次最大教训（方法论级）**：
+用户报"模型用不了"时，**先问/先查客户端的设置开关状态**，再怀疑上游。
+我把"没开开关导致的窗口偏小"误升级成"上游节点故障"，还给出了"只能等官方修"的
+不可行动结论——**代价是让用户白等了一轮**。判定上游故障必须有重试复现 + 变量对照。
