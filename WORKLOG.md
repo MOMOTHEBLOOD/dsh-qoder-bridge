@@ -237,3 +237,94 @@
   上游请求体无 image/base64 ✓ 有占位 ✓。
 - 图片经 Qoder 通道 = v0.4 待办（需接 DSH 附件服务 seam）。
 - ⚠️ junction 在 node_modules 里，npm install 后需重建（11:0x 条目的提醒仍有效）。
+
+## 2026-10-03 21:4x 接 master 指令：让 qfmodel 可用（结论：不能，是上游坏节点）
+
+背景：master 装了社区版 `@eghrhegpe/dsh-connect-qoder@0.4.2`（desktop profile），
+报两个错：① `503 rate_limit` ② `CONTEXT_WINDOW_EXCEEDED (Qwen3.8-Flash)`。
+master 明确要求 **qfmodel 是主力，不考虑换模型**。
+
+### 一、先纠正昨天的错误归因（重要）
+
+昨天记的"qfmodel 的 context_config=null → 落 FALLBACK_CONTEXT_WINDOW=200000" **是错的**。
+今天实况探针（`tools/_probe_context.mjs` / `tools/_list_all_models.mjs`）打脸：
+
+```
+qfmodel  context_config={"1M":1000000,"200K":200000,...,"400K":400000}
+         max_input_tokens=180000
+```
+
+qfmodel **有** context_config（1000000/200000/400000），根本不走 FALLBACK。
+真正的窗口来自 0.4.2 `pi-model.js` 的 `resolveContextWindow`：
+
+```js
+const options = entry.contextOptions.filter(n => Number(n) > 0)
+const widest  = options.length > 0 ? Math.max(...options) : 0
+const preferred = preferMaximumContext && widest > 0 ? widest : 0
+if (preferred > 0) return preferred
+if (Number(entry.defaultContextWindow) > 0) return Number(entry.defaultContextWindow)  // ← qfmodel 落这里
+if (Number(entry.maxInputTokens) > 0) return Number(entry.maxInputTokens)
+return FALLBACK_CONTEXT_WINDOW
+```
+
+即：**关掉"最大上下文"开关时 → 200000；打开 → 1000000**。FALLBACK 只服务 auto
+这种真没发布的模型。
+
+### 二、已执行的补丁（低风险，保留）
+
+已装副本 `profiles/desktop/node_modules/@eghrhegpe/dsh-connect-qoder/lib/pi-model.js`：
+`FALLBACK_CONTEXT_WINDOW = 200000` → `1000000`，并加注释说明本机补丁来历与
+`npm install` 会覆盖。独立回读（`tools/_verify_installed_patch.mjs`）确认生效。
+
+**但要诚实**：这条补丁对 qfmodel **没有实际作用**（qfmodel 不走 FALLBACK）。
+真正影响窗口的是设置卡片的**「最大上下文窗口」开关**：
+打开后 qfmodel 从 200K → 1M（200K 对 DSH 长会话确实偏紧，这项建议开）。
+
+### 三、决定性发现：qfmodel 在 Qoder 服务端就是坏的
+
+`tools/_diag_qfmodel.mjs` 换各种请求形态打同一个 key：
+
+```
+✓ qfmodel      thinking=off  HTTP 200  {"code":"400","message":"[FAIL]node:oa_qwen-plus-main msg:Execution failed: null"}
+✓ qfmodel      thinking=on   HTTP 200  同上（开不开思考都一样）
+✓ qmodel_38max thinking=off  HTTP 200  正常返回
+✓ qmodel_latest              HTTP 200  正常
+✓ q37fmodel                  HTTP 200  正常
+✓ dfmodel                    HTTP 200  正常
+✓ gfmodel                    HTTP 200  正常（stream 里回"收到"）
+✓ auto                       HTTP 200  正常（回"连通"）
+```
+
+**只有 qfmodel 一个 node 挂**（`oa_qwen-plus-main`），同族全部正常，
+与本机插件、协议、签名、thinking 开关、消息内容**全部无关**。
+注意 HTTP 状态是 200——错误藏在 SSE 信封的 `statusCodeValue:400` 里，
+所以表面上像"连接成功却无输出"。
+
+### 四、14 个模型的清单（供选型）
+
+| key | 名称 | 倍率 | is_free | 窗口选项 | 默认 | max_in | VL |
+|---|---|---|---|---|---|---|---|
+| qfmodel | Qwen3.8-Flash | **0（免费）** | true | 1M/200K/400K | 200K | 180K | Y |
+| qmodel | Qwen3.7-Plus | 0.1 | – | 1M/200K/400K | 200K | 180K | Y |
+| q37fmodel | Qwen3.7-Flash | 0.1 | – | 同上 | 200K | 180K | Y |
+| dfmodel | DeepSeek-Flash | 0.1 | – | 同上 | 200K | 180K | Y |
+| gfmodel | GLM-5.3-Flash | 0.1 | – | 同上 | 200K | **1M** | Y |
+| mmodel | MiniMax-M2.7 | 0.2 | – | 200K | 200K | 180K | – |
+| auto | Auto | 0.5 | – | –（无 context_config） | – | 200K | Y |
+| qmodel_38max | Qwen3.8-Max | 0.5 | true | 1M/200K/400K | 200K | 180K | Y |
+| qmodel_latest | Qwen3.7-Max | 0.5 | – | 同上 | 200K | 180K | Y |
+| dmodel | DeepSeek-V4-Pro | 0.5 | – | 同上 | 200K | 96K | Y |
+| gm51model | GLM-5.2 | 0.6 | – | 同上 | 200K | 180K | Y |
+| gmodel | GLM-5.3 | 0.8 | false | 同上 | 200K | 180K | Y |
+| kmodel | Kimi-K2.8-Preview | 0.8 | – | 同上 | 200K | 180K | Y |
+| kmodel_latest | Kimi-K3 | 1.4 | false | 同上 | 200K | 180K | Y |
+
+**免费档只有两个**：`qfmodel`（坏）与 `qmodel_38max`（0.5 倍率但 is_free=true，可用）。
+若不换模型的硬约束不可动摇，则**免费额度实际只能靠 qmodel_38max**；
+若可接受 0.1 倍率，`q37fmodel`/`dfmodel`/`gfmodel` 都是 0.1 且实测正常。
+
+### 五、遗留
+
+- qfmodel 坏节点是 Qoder 服务端问题，**只能等官方修**；建议加一层"自动跳过坏节点"。
+- `FALLBACK_CONTEXT_WINDOW` 补丁在 `npm install` 后会被覆盖（文件内已注明）。
+- 建议 master 在设置卡片打开「最大上下文窗口」开关（qfmodel/qmodel_38max 都会到 1M）。

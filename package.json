@@ -19,6 +19,8 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-llm-pi-ai": "^0.0.1-rc.1",
     "@earendil-works/pi-ai": "^1.0.0"
   }
 }
