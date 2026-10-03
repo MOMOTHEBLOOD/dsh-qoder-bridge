@@ -84,3 +84,13 @@
 - 修复：desktop 清单里 dsh-memory-global 从 ^0.1.0（npm 无此包）改为 link 形态（与实际一致）→ pnpm install 5.1s 通过 → @earendil-works/pi-ai 恢复
 - 当前态：workbuddy-bridge 依赖齐、qoder-bridge 被 DSH 自动摘出 bundles（junction+deps 声明仍在）——desktop 安全
 - 教训：该 profile 的依赖表混杂 link/file/version 三种形态，任何 pnpm 操作前必须先核对全部条目可解析
+
+## 2026-10-03 01:55 里程碑：COSY 签名一次通过，真实模型清单到手
+
+- tools/probe_models.py（Python 移植 cosy.rs）首打 `gateway.qoder.com.cn/algo/api/v2/model/list` 即 HTTP OK
+- 清单结构：11 个分组（chat/developer/assistant/inline/quest/qwork/experts/qwake/app/byok_*）
+- 模型条目字段：key/display_name/price_factor（倍率）/original_price_factor/is_free/promotion{discount_factor,时段徽章}/max_input_tokens/thinking_config/context_config
+- 实锤：倍率 + 限时折扣（错峰4折）全部可读 —— workbuddy bridge 同款展示数据源齐备
+- 已知模型：Auto / Qwen3.8-Max(0.5) / Qwen3.8-Flash(0.0 免费) 等
+- 待办 v0.2：①对话接口（信封 SSE）打通 ②Node 版签名器落地插件 ③凭据源切换 IDE auth.v1.dat（解密已验证）④provider seam 挂载
+- 备注：Mimosa 提示 MD5 弱算法 —— 为上游协议要求（服务端按 MD5 验签），非安全选择，保持兼容
