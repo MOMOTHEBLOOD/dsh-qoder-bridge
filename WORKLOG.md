@@ -133,3 +133,11 @@
 - 端到端实测（node -e）：Auto 倍率 0.5，回答「连接成功」
 - 至此插件运行时三件套全在纯 Node：凭据解密/COSY 签名/对话流
 - 剩余：①shim 的 /v1/chat/completions 从 CLI-spawn 切换为 qoder_chat 直连 ②pi-ai provider 挂载（api 字段）③client UI 分组
+
+## 2026-10-03 09:25 provider 挂载正解确认
+
+- zlZayn 宿主入口实测：inject = ['llm']；注册 = ctx.llm.registerAdapter([providerId], adapter)；更新通知 = ctx.emit('llm/adapters-updated')
+- adapter 形状 = createWorkBuddyAdapter 产物：pi-ai provider 包装（getModels/listModels 读目录快照 + baseUrl 指向 loopback shim/v1 + apiKey=shim 共享密钥）
+- 宿主会修剪 profile 依赖外的包（pi-ai 消失实证）→ 插件须自带 pi-ai（npm 装进仓库自己的 node_modules；junction 挂载下模块解析走真实路径）或手搓同接口 adapter
+- v0.3 计划：npm i @earendil-works/pi-ai（仓库本地）→ adapter 指向 shim → registerAdapter → 重启验证模型分组
+- shim 待办：/v1/chat/completions 从 CLI-spawn 切换为 qoder_chat.js 直连
