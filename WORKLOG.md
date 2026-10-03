@@ -208,3 +208,32 @@
 - 待办不变：master 重启 DSH → events.jsonl 应无"挂载失败" → UI 出现 Qoder 模型组 → 对话实测。
 - 教训：**宿主对 @deepseek-ai/* 的解析是 asar 优先，插件自带 npm 版宿主包 = 版本错位温床；
   正解是从 asar 解包同版到真实文件 + junction。**
+
+## 2026-10-03 11:5x 作用域全量解包完成，node 全链加载通过 ✅
+
+- asar `dsh/node_modules/@deepseek-ai/*` **整个作用域（190+ 包）**已解包到
+  `node_modules/@deepseek-ai/node_modules/@deepseek-ai/`（含 dsh-util-values / dsh-brand /
+  dsh-attachment / dsh-credentials / dsh-api-* / dsh-client-ui-* 全家）——
+  上一轮只解了 2 个包导致 `dsh-util-values` NOT_FOUND（events.jsonl 11:40 实录）。
+- `cosmokit` / `schemastery`（裸名依赖）补到 `SCOPE/node_modules/`（从 ZCode npm 安装副本复制）。
+- 非作用域依赖（cordis / yaml / dsh-credentials / dsh-launch-environment / dsh-settings /
+  dsh-timeout）沿用 ZCode npm 安装副本，位于 `node_modules/@deepseek-ai/node_modules/` ✓。
+- 顶层 junction（dsh-llm-pi-ai / dsh-llm → SCOPE）复核 ✓。
+- **node 实测**：`import('@deepseek-ai/dsh-llm-pi-ai')` ✓（PiAiAdapter=function）、
+  `import('@deepseek-ai/dsh-llm')` ✓（LlmAdapter/LlmError=function）、
+  `import('./src/index.js')` ✓（apply/inject/name/startShim，inject=['llm','tools','systemPrompt']）。
+- ⚠️ asar 解包脚本（opencode 临时区 _scope_fix.py）：无 offset 的空目录节点要跳过；
+  libreoffice-kit 的 .rdb/.ttf 等被跳过属正常（本链不需要）。
+- 待办：master 重启 DSH → events.jsonl 应无"挂载失败" → UI 出现 Qoder 模型组 → 对话实测。
+
+## 2026-10-03 12:2x 图片降级修复（Bubby 侧，提交 9094f63）
+
+- master 选 Qoder 模型报 "pi-ai image input requires the durable attachment service"
+  → 实锤：消息含 image/file 块时 PiAiAdapter 抛 UNSUPPORTED_CONTENT
+  （它要 DSH 的持久附件服务 {attachments, resolveImageAccess}，插件未接，zlZayn 同样未接）。
+- 修法（对齐 zlZayn）：模型声明改纯文本 `input:['text']` + adapter.stream 入口包
+  `stripHeavyBlocks`（剥 image/file 块、留文字占位）→ 纯文本对话照常可用。
+- 端到端验证（tools/test_image_degrade.mjs，本地记录型服务冒充 shim）：
+  上游请求体无 image/base64 ✓ 有占位 ✓。
+- 图片经 Qoder 通道 = v0.4 待办（需接 DSH 附件服务 seam）。
+- ⚠️ junction 在 node_modules 里，npm install 后需重建（11:0x 条目的提醒仍有效）。
