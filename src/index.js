@@ -1,31 +1,31 @@
 /**
- * dsh-qoder-bridge —— DSH bundle 插件（ESM，零构建）。
+ * dsh-qoder-bridge —— DSH bundle 插件（ESM，零外部依赖）。
  * 契约：具名导出 name / inject / apply（禁止 default export）。
  *
- * 启动三相位（契约，顺序不可换）：
- *   1) 读凭据（~/.qoderworkcn，qoderclicn login 落盘）
- *   2) 启动 loopback shim + 注册 provider（provider 一旦可见就带模型）
- *   3) 目录/模型清单抓取（v0.1 用静态清单，v0.2 抓上游）
- *
- * 任一相位失败 → 降级注册（隐藏态 + 轮询揭示），绝不阻断 DSH 启动。
+ * v0.2：凭据(IDE auth.v1.dat) → COSY → Qoder 网关 全链路直连；
+ * loopback shim 提供 OpenAI 兼容 /v1/chat/completions；
+ * provider 经 ctx.llm.registerAdapter 挂载（对照 zlZayn bridge：inject ['llm']）。
+ * 所有 seam 先判存在，任何失败降级不阻断宿主启动。
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import http from 'node:http'
 import crypto from 'node:crypto'
-import { spawn } from 'node:child_process'
+
+import { loadIdentity } from './qoder_credentials.js'
+import { buildAuthHeaders, encodeBody } from './qoder_cosy.js'
+import { fetchCatalog, findModel, chatStream } from './qoder_chat.js'
+import { buildQoderProvider } from './qoder_provider.js'
 
 export const name = 'qoder-bridge'
+export const inject = ['llm', 'tools', 'systemPrompt']
 
-// v0.1 未验证宿主 llm seam 的确切名称；tools/systemPrompt 已由 handoff 插件实测可用。
-// TODO(live-install): 对照 zlZayn/dsh-workbuddy-bridge src/index.ts 的 inject 数组修正。
-export const inject = ['tools', 'systemPrompt']
-
-const HOME_DIR = path.join(process.env.USERPROFILE || os.homedir(), '.qoderworkcn')
 const PROVIDER_ID = 'qoder'
-const SHARED_SECRET = crypto.randomBytes(24).toString('hex')
-const DEFAULT_MODELS = ['qoder-coder', 'qoder-chat']
+const SHARED_SECRET = process.env.DSH_QODER_SHARED || crypto.randomBytes(24).toString('hex')
+const FALLBACK_MODELS = ['auto', 'qfmodel', 'qmodel_38max', 'qmodel_latest', 'qmodel']
+const GATEWAY = 'https://gateway.qoder.com.cn'
+const MODELS_URL = GATEWAY + '/algo/api/v2/model/list'
 
 function bridgeDir() {
   return process.env.DSH_QODER_BRIDGE_DIR || path.join(os.homedir(), '.dsh', 'qoder-bridge')
@@ -51,90 +51,69 @@ function appendLog(line) {
   } catch { /* ignore */ }
 }
 
-/** 凭据候选文件名白名单；路径必须落在凭据根目录内（Mimosa 路径穿越守卫）。 */
-const CREDENTIAL_CANDIDATES = ['credentials.json', 'auth.json', 'config.json', 'storage.json']
-
-function resolveInside(root, name) {
-  const target = path.resolve(root, name)
-  if (target !== root && !target.startsWith(root + path.sep)) return null
-  return target
-}
-
-/** 相位1：凭据发现。qoderclicn login 落盘在 ~/.qoderworkcn；候选文件名走白名单。 */
-export function readCredentials(homeDir = HOME_DIR) {
-  const root = path.resolve(homeDir)
-  for (const name of CREDENTIAL_CANDIDATES) {
-    const p = resolveInside(root, name)
-    try {
-      if (!p || !fs.existsSync(p)) continue
-      const raw = JSON.parse(fs.readFileSync(p, 'utf8'))
-      const token =
-        raw.accessToken || raw.access_token || raw.personalAccessToken || raw.token || raw.PAT || ''
-      if (token) return { source: p, token: String(token), raw }
-    } catch { /* 换下一个候选 */ }
-  }
-  return null
-}
-
-/** 相位2a：loopback shim —— OpenAI 风格入口，转译为 qoderclicn 子进程调用。 */
-export function startShim({ token, log }) {
+/**
+ * loopback shim：OpenAI 兼容 /v1/chat/completions → qoder_chat 直连。
+ * GET /v1/models 也提供（OpenAI 形状）。
+ */
+export function startShim({ ident, catalogRef }) {
   const server = http.createServer((req, res) => {
     const auth = req.headers.authorization || ''
     if (auth !== `Bearer ${SHARED_SECRET}`) {
       res.writeHead(401).end('{"error":"bad secret"}')
       return
     }
-    if (req.method !== 'POST' || !req.url.startsWith('/v1/chat/completions')) {
-      res.writeHead(404).end('{"error":"not found"}')
-      return
-    }
     let body = ''
     req.on('data', (c) => (body += c))
-    req.on('end', () => {
-      let prompt = ''
+    req.on('end', async () => {
       try {
-        const payload = JSON.parse(body)
-        prompt = (payload.messages || [])
-          .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`)
-          .join('\n')
-      } catch { /* 空 prompt 兜底 */ }
-
-      // CLI 隔离派：prompt 落盘 → 子进程独立 HOME + PAT 注入 → stdout 即回答
-      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qoder-bridge-'))
-      const promptFile = path.join(tmp, 'prompt.txt')
-      fs.writeFileSync(promptFile, prompt, 'utf8')
-      const child = spawn('qoderclicn', ['--prompt', promptFile, '--max-output-tokens', '4096'], {
-        env: {
-          ...process.env,
-          QODERCN_PERSONAL_ACCESS_TOKEN: token,
-          USERPROFILE: HOME_DIR,
-          HOME: HOME_DIR,
-        },
-        windowsHide: true,
-      })
-      res.writeHead(200, {
-        'content-type': 'text/event-stream',
-        'cache-control': 'no-cache',
-        connection: 'keep-alive',
-      })
-      let out = ''
-      child.stdout.on('data', (c) => {
-        out += c.toString('utf8')
-        for (const chunk of c.toString('utf8').split('\n').filter(Boolean)) {
-          const delta = { choices: [{ delta: { content: chunk } }] }
-          res.write(`data: ${JSON.stringify(delta)}\n\n`)
+        const urlPath = (req.url || '').split('?')[0]
+        if (req.method === 'GET' && urlPath === '/v1/models') {
+          const catalog = catalogRef.get() || await fetchCatalog(ident)
+          const list = Object.values(catalog)
+            .flatMap((v) => (Array.isArray(v) ? v : []))
+            .filter((m) => m && m.enable !== false)
+            .map((m) => ({ id: m.key, object: 'model', owned_by: 'qoder' }))
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ object: 'list', data: list }))
+          return
         }
-      })
-      child.on('close', () => {
+        if (req.method !== 'POST' || !urlPath.startsWith('/v1/chat/completions')) {
+          res.writeHead(404).end('{"error":"not found"}')
+          return
+        }
+        const payload = JSON.parse(body || '{}')
+        const modelKey = payload.model || 'auto'
+        const model = findModel(catalogRef.get() || {}) || findModel(await fetchCatalog(ident)) || { key: modelKey }
+        const messages = (payload.messages || []).map((m) => ({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        }))
+        if (payload.stream === false) {
+          const text = await chatStream(ident, model, messages, null, 4096)
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({
+            id: 'qoder-' + Date.now(), object: 'chat.completion',
+            choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+          }))
+          return
+        }
+        res.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+          connection: 'keep-alive',
+        })
+        await chatStream(ident, model, messages, (delta) => {
+          const frame = { id: 'qoder-' + Date.now(), object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: delta } }] }
+          res.write(`data: ${JSON.stringify(frame)}\n\n`)
+        }, 4096)
         res.write('data: [DONE]\n\n')
         res.end()
-        try { fs.rmSync(tmp, { recursive: true, force: true }) } catch { /* ignore */ }
-        log(`shim 完成，输出 ${out.length} 字节`)
-      })
-      child.on('error', (e) => {
-        res.write(`data: ${JSON.stringify({ error: String(e) })}\n\n`)
-        res.end()
-      })
+      } catch (e) {
+        try {
+          res.writeHead(502, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: String(e).slice(0, 300) } }))
+        } catch { /* 响应已发出 */ }
+      }
     })
   })
   return new Promise((resolve) => {
@@ -143,52 +122,67 @@ export function startShim({ token, log }) {
 }
 
 export function apply(ctx) {
-  // cordis 契约：apply 必须同步返回普通对象（handoff 实测），异步活全部 fire-and-forget。
-  appendLog('apply 开始')
+  // cordis 契约：apply 同步返回普通对象；异步活 fire-and-forget
+  appendLog('apply 开始（v0.2 直连）')
+  const catalogRef = { get: () => null }
   let shimInfo = null
+  let ident = null
+
   const boot = (async () => {
-    const cred = readCredentials()
-    if (cred) {
-      shimInfo = await startShim({ token: cred.token, log: (m) => appendLog(m) })
-      appendLog(`shim 就绪 ${shimInfo.baseUrl}`)
-    } else {
-      appendLog('未发现凭据 —— 降级为仅诊断模式')
+    ident = await loadIdentity()
+    appendLog(`凭据 OK：uid 长度 ${ident.uid.length}，machine_id 长度 ${ident.machine_id.length}`)
+    shimInfo = await startShim({ ident, catalogRef })
+    appendLog(`shim 就绪 ${shimInfo.baseUrl}`)
+
+    const catalog = await fetchCatalog(ident)
+    catalogRef.get = () => catalog
+    const chatModels = Object.values(catalog).flatMap((v) => (Array.isArray(v) ? v : [])).filter((m) => m && m.enable !== false)
+    appendLog(`目录就绪：${chatModels.length} 个模型`)
+
+    // provider 挂载：inject 'llm' seam（对照 zlZayn：registerAdapter + adapters-updated）
+    try {
+      const { buildQoderProvider } = await import('./qoder_provider.js')
+      const provider = buildQoderProvider({ shimBaseUrl: shimInfo.baseUrl, sharedSecret: SHARED_SECRET, catalogModels: chatModels })
+      const adapter = { provider, rebuild: () => provider }
+      if (ctx && ctx.llm && typeof ctx.llm.registerAdapter === 'function') {
+        ctx.llm.registerAdapter([PROVIDER_ID], adapter)
+        if (typeof ctx.emit === 'function') {
+          try { ctx.emit('llm/adapters-updated') } catch { /* ignore */ }
+        }
+        appendLog(`provider 已挂载：${PROVIDER_ID} x ${chatModels.length} 模型`)
+      } else {
+        appendLog('宿主 llm seam 缺失 registerAdapter —— 记录待修')
+      }
+    } catch (e) {
+      appendLog(`provider 挂载失败（降级）：${String(e).slice(0, 200)}`)
     }
 
-    // v0.1.3：provider 注册暂缓 —— pi-ai/@deepseek-ai 系不在公共 npm（404 实测），
-    // 必须走宿主运行时模块；待 bundle 加载契约验证通过后，用宿主注入的 seam 单独试验。
-    appendLog('provider 注册挂起（v0.2 通过宿主 seam 试验），当前能力：留痕 + 诊断工具 + shim')
     writeStatus({
-      credentialFound: !!cred,
-      credentialSource: cred?.source || null,
-      shim: shimInfo?.baseUrl || null,
-      models: DEFAULT_MODELS,
-      provider: 'pending-v0.2',
+      credentialFound: true,
+      shim: shimInfo.baseUrl,
+      models: chatModels.length,
+      provider: 'mounted-via-llm-seam',
     })
   })()
-  if (ctx && typeof ctx.effect === 'function') {
-    ctx.effect(() => boot)
-  } else {
-    boot.catch((e) => appendLog(`boot 失败：${String(e).slice(0, 160)}`))
-  }
+  boot.catch((e) => {
+    appendLog(`boot 失败：${String(e).slice(0, 200)}`)
+    writeStatus({ bootError: String(e).slice(0, 200) })
+  })
 
-  // 诊断/留痕工具：同步注册，DSH 会话里可直接查桥状态
+  // 诊断/留痕工具
   try {
     ctx?.tools?.register?.(
       {
         name: 'qoder_bridge_status',
-        description: '查看 dsh-qoder-bridge 桥状态（凭据/shim/provider）',
+        description: '查看 dsh-qoder-bridge 桥状态（凭据/shim/provider/模型数）',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       },
-      async () => {
-        const c = readCredentials()
-        return {
-          ok: true,
-          credential: c ? { source: c.source, tokenHead: c.token.slice(0, 8) } : null,
-          shim: shimInfo ? shimInfo.baseUrl : null,
-          models: DEFAULT_MODELS,
-        }
-      },
+      async () => ({
+        ok: true,
+        shim: shimInfo ? shimInfo.baseUrl : null,
+        models: catalogRef.get() ? '目录已加载' : '未加载',
+        identLoaded: !!ident,
+      }),
     )
   } catch { /* ignore */ }
 

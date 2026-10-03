@@ -141,3 +141,11 @@
 - 宿主会修剪 profile 依赖外的包（pi-ai 消失实证）→ 插件须自带 pi-ai（npm 装进仓库自己的 node_modules；junction 挂载下模块解析走真实路径）或手搓同接口 adapter
 - v0.3 计划：npm i @earendil-works/pi-ai（仓库本地）→ adapter 指向 shim → registerAdapter → 重启验证模型分组
 - shim 待办：/v1/chat/completions 从 CLI-spawn 切换为 qoder_chat.js 直连
+
+## 2026-10-03 09:45 里程碑：shim 端到端通过
+
+- src/qoder_provider.js：pi-ai createProvider（auth.resolve 静态密钥 + openai-completions API + 模型指向 shim/v1）
+- src/index.js 重写：shim /v1/chat/completions 与 /v1/models 切换为 qoder_chat 直连（CLI-spawn 移除）
+- 实测（tools/test_shim.mjs）：POST OpenAI 格式 → HTTP 200 → 「连接成功」
+- provider 注册代码就位（registerAdapter + adapters-updated），待真装验证 llm seam
+- 修坑：pi-ai 子路径导出双 .js

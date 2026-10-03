@@ -4,10 +4,21 @@
   "description": "把 Qoder CLI(qoderclicn) 登录态的模型接入 DSH —— 仿 dsh-workbuddy-bridge",
   "type": "module",
   "main": "src/index.js",
-  "files": ["src/", "cordis.patch.yml", "README.md"],
+  "files": [
+    "src/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" }
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   },
-  "engines": { "node": ">=18" },
-  "license": "MIT"
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@earendil-works/pi-ai": "^1.0.0"
+  }
 }
