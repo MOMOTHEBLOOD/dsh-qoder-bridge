@@ -77,3 +77,10 @@
 - 我声明 pi-ai 依赖拖出 404 依赖树 = 安装失败根因；dsh.client.inject 声明也超出 handoff 形状（client-hmr 等 clientModules 的线索）
 - v0.1.3：零依赖 + 移除 client.inject + provider 注册挂起 —— 完全对齐 handoff 形状（本机唯一实测可加载的形态）
 - 测试 profile：D:/1-3HD/dsh/profiles/qoder-test 已建，desktop 不再用于联调
+
+## 2026-10-03 01:40 workbuddy 修复
+
+- 断链原因：此前失败的 pnpm install（memory-global 404 中断）没装完 workbuddy-bridge 的依赖树 → "failed to import"
+- 修复：desktop 清单里 dsh-memory-global 从 ^0.1.0（npm 无此包）改为 link 形态（与实际一致）→ pnpm install 5.1s 通过 → @earendil-works/pi-ai 恢复
+- 当前态：workbuddy-bridge 依赖齐、qoder-bridge 被 DSH 自动摘出 bundles（junction+deps 声明仍在）——desktop 安全
+- 教训：该 profile 的依赖表混杂 link/file/version 三种形态，任何 pnpm 操作前必须先核对全部条目可解析

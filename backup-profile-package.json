@@ -1,0 +1,27 @@
+{
+  "name": "dsh-profile-desktop",
+  "private": true,
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@deepseek-ai/dsh-experimental-schedule-bundle",
+        "@deepseek-ai/dsh-experimental-auto-review",
+        "@deepseek-ai/dsh-experimental-agent-team-profile",
+        "dsh-memory-global",
+        "dsh-import-agents",
+        "dsh-plugin-session-delete-uni",
+        "@dsh-external/dsh-blender-plugin",
+        "dsh-workbuddy-bridge"
+      ]
+    }
+  },
+  "dependencies": {
+    "@dsh-external/dsh-blender-plugin": "link:G:/ITOOLS/Apps/dsh-plugins/dsh-blender-plugin",
+    "dsh-import-agents": "^0.3.0",
+    "dsh-memory-global": "^0.1.0",
+    "dsh-plugin-session-delete-uni": "file:G:/ITOOLS/Apps/dsh-plugins/session-delete-uni",
+    "dsh-workbuddy-bridge": "^0.2.0"
+  }
+}
