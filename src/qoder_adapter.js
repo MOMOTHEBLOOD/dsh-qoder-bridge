@@ -29,15 +29,30 @@ export function createQoderAdapter({ ident, catalogRef, shim }) {
   const providerId = 'qoder'
   const displayName = 'Qoder'
 
+  // ★ contextWindow 必须 > 0（dsh-llm 校验：(!cw || cw<=0) → INVALID_MODEL_CONTEXT）。
+  //   实测目录里 `auto` 的 context_config=null → Math.max(...[])=-Infinity → 必须兜底。
+  const contextWindowOf = (m) => {
+    const vals = m.context_config
+      ? Object.values(m.context_config).map((c) => c?.token_count || 0).filter((v) => Number.isFinite(v) && v > 0)
+      : []
+    const best = vals.length ? Math.max(...vals) : undefined
+    const mit = Number(m.max_input_tokens)
+    if (Number.isFinite(best) && best > 0) return Math.round(best)
+    if (Number.isFinite(mit) && mit > 0) return Math.round(mit)
+    return 131072
+  }
+
   const buildModels = () => {
     const baseUrl = shim.baseUrl() + '/v1'
     const chat = catalogRef.get()?.chat
     const list = Array.isArray(chat)
       ? chat
       : Object.values(catalogRef.get() || {}).flatMap((v) => (Array.isArray(v) ? v : []))
-    return list
-      .filter((m) => m && m.enable !== false)
-      .map((m) => ({
+    // ★ 按 key 去重：目录里同一模型会在多个分组重复出现（113 条 → 实际 ~14 个唯一）
+    const seen = new Map()
+    for (const m of list) {
+      if (!m || m.enable === false || !m.key || seen.has(m.key)) continue
+      seen.set(m.key, {
         id: m.key,
         name: m.display_name || m.key,
         api: 'openai-completions',
@@ -46,13 +61,13 @@ export function createQoderAdapter({ ident, catalogRef, shim }) {
         input: m.is_vl ? ['text', 'image'] : ['text'],
         reasoning: !!m.is_reasoning,
         cost: NO_COST,
-        contextWindow: m.context_config
-          ? Math.max(...Object.values(m.context_config).map((c) => c.token_count || 0))
-          : undefined,
+        contextWindow: contextWindowOf(m),
         maxTokens: m.max_input_tokens,
         compat: { maxTokensField: 'max_tokens' },
         headers: { Authorization: 'Bearer ' + shim.token() },
-      }))
+      })
+    }
+    return [...seen.values()]
   }
 
   const base = createProvider({
