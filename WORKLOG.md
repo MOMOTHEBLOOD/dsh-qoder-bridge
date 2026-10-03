@@ -64,3 +64,9 @@
 - 根因1：cordis.patch.yml 用了 zlZayn 新版列表式 insert，本机 cordis 只认 handoff 简洁式（insert: id/name）——已改
 - 根因2：apply 是 async 返回 Promise，违反同步 effect 契约——已改为同步 apply + 异步活走 ctx.effect / fire-and-forget
 - 版本 0.1.1，用户拉取方式：重新执行 pnpm add <repo>（或 git pull 后 pnpm add ./）
+
+## 2026-10-03 01:05 事故与恢复
+
+- v0.1.1 修复未生效（pnpm lockfile 钉死旧 commit，用户重复 add 拉不到新 HEAD），旧代码再次炸掉 DSH 启动（Invalid effect at safeCollect 全局失败）
+- 恢复操作：`pnpm remove dsh-qoder-bridge`（清 node_modules+dependencies）+ 手工摘除 profile package.json bundles 清单中的残留行 —— **未动其它 9 个 bundle**
+- 流程修正（防再犯）：① 后续联调一律用独立 profile（qoder-test），desktop profile 只装通过最小加载测试的版本 ② 每次发版升版本号 ③ 先做"空 apply 最小对照"二分定位，再上真逻辑
