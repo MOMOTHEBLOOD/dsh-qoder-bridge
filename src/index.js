@@ -55,10 +55,10 @@ function appendLog(line) {
  * loopback shim：OpenAI 兼容 /v1/chat/completions → qoder_chat 直连。
  * GET /v1/models 也提供（OpenAI 形状）。
  */
-export function startShim({ ident, catalogRef }) {
+export function startShim({ ident, catalogRef, secret }) {
   const server = http.createServer((req, res) => {
     const auth = req.headers.authorization || ''
-    if (auth !== `Bearer ${SHARED_SECRET}`) {
+    if (auth !== `Bearer ${secret ?? SHARED_SECRET}`) {
       res.writeHead(401).end('{"error":"bad secret"}')
       return
     }
@@ -83,7 +83,10 @@ export function startShim({ ident, catalogRef }) {
         }
         const payload = JSON.parse(body || '{}')
         const modelKey = payload.model || 'auto'
-        const model = findModel(catalogRef.get() || {}) || findModel(await fetchCatalog(ident)) || { key: modelKey }
+        const model = findModel(catalogRef.get() || {}, modelKey)
+          || findModel(await fetchCatalog(ident), modelKey)
+          || findModel(await fetchCatalog(ident), 'auto')
+          || { key: modelKey, source: 'system' }
         const messages = (payload.messages || []).map((m) => ({
           role: m.role,
           content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
@@ -102,10 +105,17 @@ export function startShim({ ident, catalogRef }) {
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         })
-        await chatStream(ident, model, messages, (delta) => {
-          const frame = { id: 'qoder-' + Date.now(), object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: delta } }] }
-          res.write(`data: ${JSON.stringify(frame)}\n\n`)
-        }, 4096)
+        try {
+          await chatStream(ident, model, messages, (delta) => {
+            const frame = { id: 'qoder-' + Date.now(), object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: delta } }] }
+            res.write(`data: ${JSON.stringify(frame)}\n\n`)
+          }, 4096)
+        } catch (streamErr) {
+          // ★ SSE 已开：以文字帧暴露真实原因并立即收尾（否则 pi-ai 干等 5 分钟超时）
+          const msg = '【Qoder 上游错误】' + String(streamErr).slice(0, 220)
+          const errFrame = { id: 'qoder-err', object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: msg }, finish_reason: 'stop' }] }
+          res.write(`data: ${JSON.stringify(errFrame)}\n\n`)
+        }
         res.write('data: [DONE]\n\n')
         res.end()
       } catch (e) {
